@@ -1,3 +1,3 @@
-* [Home](/)
-	* [Home2](/)
-* [Guide](guide.md "The greatest guide in the world")
+* 数据结构
+	* [数组](category/data_structure/Array.md)
+	* [链表和双向链表](category/data_structure/LinkedListAndDoubleLinkedList.md)
