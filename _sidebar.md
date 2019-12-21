@@ -3,4 +3,4 @@
 	* [链表和双向链表](category/data_structure/02_普通链表和双向链表.md)
 * [高性能Mysql笔记](/)
 	* [Mysql的架构和历史](category/mysql/01_Mysql的架构和历史.md)
-*
+	* [Schema与数据类型优化](category/mysql/02_Schema与数据类型优化.md)
