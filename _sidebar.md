@@ -5,4 +5,6 @@
 	* [Mysql的架构和历史](category/mysql/01_Mysql的架构和历史.md)
 	* [Schema与数据类型优化](category/mysql/02_Schema与数据类型优化.md)
 * [java并发](/)
-	* [实现多线程的正确姿势](category/concurrency/01_实现多线程的正确姿势.md)
+	* [实现多线程的方式](category/concurrency/01_实现多线程的方式.md)
+	* [启动线程](category/concurrency/02_启动线程.md)
+	* [线程的中断和停止](category/concurrency/03_线程的中断和停止.md)
