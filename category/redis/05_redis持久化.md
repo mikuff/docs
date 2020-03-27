@@ -124,7 +124,74 @@ Redis 重启的会根据日志文件的内容将写指令从前到后执行一�
 
 #### bgrewriteaof
 > bgrewriteaof 类似于rdb中bgsave，仍然是利用fork出子进程，然后去完成aof重写的过程
+
 ![](./img/aof-bgrewriteaof.png)
 
-#### AOF重写配置
+#### AOF重写流程
+![](./img/AOF重写流程.png)
 
+#### AOF重写配置
+配置名|含义|默认值
+-|-|-
+auto-aof-rewrite-min-size|AOF重写需要的尺寸|64mb
+auto-aof-rewrite-percentage|AOF文件增长率|100
+
+统计名|含义
+-|-
+aof-current-size|AOF当前尺寸(单位:字节)
+aof-base-size|AOF上次启动和重写的尺寸(单位:字节)
+
+> AOF自动重写满足条件<br/>
+> aof_current_size > auto-aof-rewrite-min-size<br/>
+> (aof_current_size - aof_base_size) * 100 / aof_base_size > auto-aof-rewrite-percentage
+
+```shell
+# 开启AOF持久化方式
+appendonly yes
+
+# AOF持久化文件名
+appendfilename appendonly-${port}.aof
+
+# 每秒把缓冲区的数据同步到磁盘
+appendfsync everysec
+
+# 数据持久化文件存储目录
+dir /bigdiskpath
+
+# 是否在执行重写时不同步数据到AOF文件
+# 这里的 yes，就是执行重写时不同步数据到AOF文件
+no-appendfsync-on-rewrite yes
+
+# 触发AOF文件执行重写的最小尺寸
+auto-aof-rewrite-min-size 64mb
+
+# 触发AOF文件执行重写的增长率
+auto-aof-rewrite-percentage 100
+
+# AOF存在错误的时候是否忽略错误
+aof-load-truncated yes
+
+```
+
+#### AOF优缺点
+##### AOF优点
+> - 使用AOF 会让你的Redis更加耐久: 你可以使用不同的fsync策略：无fsync，每秒fsync，每次写的时候fsync。使用默认的每秒fsync策略，Redis的性能依然很好(fsync是由后台线程进行处理的，主线程会尽力处理客户端请求)，一旦出现故障，你最多丢失1秒的数据<br/>
+> - AOF文件是一个只进行追加的日志文件，所以不需要写入seek，即使由于某些原因(磁盘空间已满，写的过程中宕机等等)未执行完整的写入命令，你也也可使用redis-check-aof工具修复这些问题。<br/>
+> - Redis 可以在 AOF 文件体积变得过大时，自动地在后台对 AOF 进行重写： 重写后的新 AOF 文件包含了恢复当前数据集所需的最小命令集合。 整个重写操作是绝对安全的，因为 Redis 在创建新 AOF 文件的过程中，会继续将命令追加到现有的 AOF 文件里面，即使重写过程中发生停机，现有的 AOF 文件也不会丢失。 而一旦新 AOF 文件创建完毕，Redis 就会从旧 AOF 文件切换到新 AOF 文件，并开始对新 AOF 文件进行追加操作<br/>
+> - AOF 文件有序地保存了对数据库执行的所有写入操作， 这些写入操作以 Redis 协议的格式保存， 因此 AOF 文件的内容非常容易被人读懂， 对文件进行分析（parse）也很轻松。 导出（export） AOF 文件也非常简单： 举个例子， 如果你不小心执行了 FLUSHALL 命令， 但只要 AOF 文件未被重写， 那么只要停止服务器， 移除 AOF 文件末尾的 FLUSHALL 命令， 并重启 Redis ， 就可以将数据集恢复到 FLUSHALL 执行之前的状态
+
+##### AOF缺点
+> - 于相同的数据集来说，AOF 文件的体积通常要大于 RDB 文件的体积。
+> - 根据所使用的 fsync 策略,AOF的速度可能会慢于RDB,在一般情况下， 每秒 fsync 的性能依然非常高,而关闭fsync可以让AOF的速度和RDB一样快,即使在高负荷之下也是如此。 不过在处理巨大的写入载入时,RDB可以提供更有保证的最大延迟时间（latency）
+
+## AOF和RDB的选择
+命令|RDB|AOF
+-|-|-
+优先级|低|高
+体积|小|大
+恢复速度|快|慢
+数据安全|丢数据|根据策略决定
+轻重|重|轻
+
+> 总结:如果你非常关心你的数据,但仍然可以承受数分钟以内的数据丢失，那么你可以只使用 RDB 持久化。<br>
+有很多用户都只使用 AOF 持久化,但并不推荐这种方式:因为定时生成RDB快照（snapshot）非常便于进行数据库备份， 并且RDB恢复数据集的速度也要比AOF恢复的速度要快。
