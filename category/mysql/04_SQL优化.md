@@ -272,7 +272,7 @@ query_cache_min_res_unit
 MySQL依照这个执行计划和存储引擎进行交互，这个阶段包括多个子过程：
 - 解析SQL，预处理，优化SQL执行计划
 - 语法解析阶段是通过关键字对MySQL语句进行解析，并生成一颗对应的”解析树“，MySQL解析器将使用MySQL语法规则验证和解析查询，
-   	- 包括检查语法是否使用了正确的关键字、关键字的顺序是否正确等，预处理阶段是根据MySQL规则进一步检查解析树是否合法。
+   	- 包括检查语法是否使用了正确的关键字、关键字的顺序是否正确等，预处理阶段是根据MySQL规则进一步检查解析树是否合法。 
    	- 检查查询中所涉及的表和数据列是否存在及名字或别名是否存在歧义等。
    	- 语法检查全部通过了，查询优化器就可以生成查询计划了。
 
@@ -292,3 +292,81 @@ MySQL依照这个执行计划和存储引擎进行交互，这个阶段包括多
 - 子查询优化，将子查询改为关联查询
 - 提前终止查询
 - 对in()条件进行优化， 先对in()中的数据进行排序，然后再根据二分查找的方式是否满足条件。
+
+## 确认SQL查询所消耗的时间
+### 使用profile
+- set profiling = 1; 启动profile,这是一个session级的配制
+- 执行查询
+  - show profiles; 查看每一个查询所消耗的总时间的信息
+  - show profile for query N; 查询的每个阶段所消耗的时间
+  - show profile 这种查看方式官方不推荐使用了，推荐使用performance_schema;
+
+### 使用performance_schema
+``` sql
+SET SQL_SAFE_UPDATES = 0;
+UPDATE setup_instruments set enabled = 'YES', TIMED = 'YES' WHERE name LIKE 'stage%';
+UPDATE setup_consumers set enabled = 'YES' WHERE NAME LIKE 'events%';
+```
+
+``` sql
+SELECT a.THREAD_ID,SQL_TEXT,c.EVENT_NAME,(c.TIMER_END - c.TIMER_START)/1000000000 AS 'DURATION (ms)'
+FROM events_statements_history_long a
+JOIN threads b ON a.THREAD_ID=b.THREAD_ID
+JOIN events_stages_history_long c ON c.THREAD_ID=b.THREAD_ID
+AND c.EVENT_ID BETWEEN a.EVENT_ID AND a.END_EVENT_ID
+WHERE b.PROCESSLIST_ID=CONNECTION_ID()
+AND a.EVENT_NAME= 'statement/sql/select'
+ORDER BY a.THREAD_ID,c.EVENT_ID;
+```
+
+## 特定场景下SQL优化
+### 大表更新和删除
+``` sql
+DELIMITER $$
+USE `imooc`$$
+DROP PROCEDURE IF EXISTS `p_delete_rows`$$
+CREATE DEFINER=`root`@`127.O.O.1` PROCEDURE `p_delete_rows`()
+  BEGIN
+  DECLARE v_rows INT;
+  SET v_rows = 1;
+  WHILE v_rows > 0
+  DO
+    DELETE FROM sbtestl WHERE id >= 90000 AND id <= 190000 LIMIT 5000;
+    SELECT ROW_COUNT() INTO v_rows;
+    SELECT SLEEP(5); 
+  END WHILE;
+END$$
+DELIMITER ;
+```
+### 大表结构修改
+``` shell
+pt-online-schema-change \
+--alter="MODIFY c VARCHAR(150) NOT NULL DEFAULT ''" \
+--user=user \
+--password=password \
+D=database_name \
+t=table_name \
+--charset=utf8 \
+--execute
+```
+
+### 优化not in 和 <>的查询
+``` sql
+select customer_id,first_name,last_name,email,
+from customer
+where customer_id
+not in(select customer_id from payment);
+
+# 可以将上述查询优化为left join的方式
+select a.customer_id,a.first_name,a.last_name,a.email
+from customer a
+left join payment b on a.customer_id = b.customer_id
+where b.customer_id is null;
+```
+### 汇总优化查询
+``` sql
+select count(*) from product_comment where product_id = 999;
+
+# 这种方式可以使用汇总表来统计，以备后续的查询来使用
+
+```
