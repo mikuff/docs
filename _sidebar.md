@@ -37,6 +37,7 @@
 	* [CAS](category/juc/06_CAS.md)
 	* [final和不变性](category/juc/07_final和不变性.md)
 	* [线程协作](category/juc/09_线程协作.md)
+	* [AQS](category/juc/10_AQS.md)
 * [redis](/)
 	* [初识redis](category/redis/01_初识redis.md)
 	* [API的使用和理解](category/redis/02_API的使用和理解.md)
