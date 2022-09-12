@@ -51,6 +51,7 @@
 		* [回表查询](category/database/mysql/索引/03_回表查询.md)
 		* [覆盖索引](category/database/mysql/索引/04_覆盖索引.md)
 		* [索引失效](category/database/mysql/索引/05_索引失效.md)
+		* [成本估算](category/database/mysql/索引/06_成本估算.md)
 * [中间件](/)
 	* [redis](/)
 		* [初识redis](category/middleware/redis/01_初识redis.md)
