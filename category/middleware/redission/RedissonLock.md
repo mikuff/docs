@@ -245,11 +245,14 @@ public class RedissonLock extends RedissonExpirable implements RLock {
         
         // 尝试进行订阅, 如果订阅超时且订阅成功就取消订阅,判定加锁失败 return false
         current = System.currentTimeMillis();
+
+        // 订阅分布式锁, 解锁时进行通知
         RFuture<RedissonLockEntry> subscribeFuture = subscribe(threadId);
         if (!subscribeFuture.await(time, TimeUnit.MILLISECONDS)) {
             if (!subscribeFuture.cancel(false)) {
                 subscribeFuture.onComplete((res, e) -> {
                     if (e == null) {
+                        // 等待超时，直接取消订阅
                         unsubscribe(subscribeFuture, threadId);
                     }
                 });
@@ -283,7 +286,11 @@ public class RedissonLock extends RedissonExpirable implements RLock {
                     return false;
                 }
 
-                // 如果key的过期时间大于0 && 过期时间小于剩余的等待时间,则以过期时间为最大时间进行加锁，反之则以剩余等待时间为最大时间进行加锁
+
+                // 根据锁TTL，调整阻塞等待时长；
+                // 1、latch其实是个信号量Semaphore，调用其tryAcquire方法会让当前线程阻塞一段时间，避免在while循环中频繁请求获锁；
+                // 当其他线程释放了占用的锁，会广播解锁消息，监听器接收解锁消息，并释放信号量，最终会唤醒阻塞在这里的线程
+                // 该Semaphore的release方法，会在订阅解锁消息的监听器消息处理方法org.redisson.pubsub.LockPubSub#onMessage调用；
                 currentTime = System.currentTimeMillis();
                 if (ttl >= 0 && ttl < time) {
                     subscribeFuture.getNow().getLatch().tryAcquire(ttl, TimeUnit.MILLISECONDS);
@@ -305,7 +312,7 @@ public class RedissonLock extends RedissonExpirable implements RLock {
     }
 }
 ```
-> 可以看出加锁的主体逻辑是 **初始加锁 -> 订阅 -> 自旋加锁 -> 兜底取消订阅,在整个逻辑中贯穿waitTime时间限制**
+> 可以看出加锁的主体逻辑是 **初始加锁 -> 订阅 -> 自旋加锁 -> 兜底取消订阅,在整个逻辑中贯穿waitTime时间限制**。要么线程拿到锁返回成功；要么没拿到锁并且等待时间还没过就继续循环拿锁，同时监听锁是否被释放
 ### 加锁
 ```java
 public class RedissonLock extends RedissonExpirable implements RLock {
@@ -314,7 +321,7 @@ public class RedissonLock extends RedissonExpirable implements RLock {
     }
 
     private <T> RFuture<Long> tryAcquireAsync(long leaseTime, TimeUnit unit, long threadId) {
-        // 还是使用lua脚本进行加锁
+        // 如果传入了租期时间，则不会启动看门狗线程进行续约
         if (leaseTime != -1) {
             return tryLockInnerAsync(leaseTime, unit, threadId, RedisCommands.EVAL_LONG);
         }
@@ -336,7 +343,266 @@ public class RedissonLock extends RedissonExpirable implements RLock {
 
 ```
 ### 订阅
+``` java
+
+订阅解锁消息 redisson_lock__channel:{$KEY}，并通过await方法阻塞等待锁释放，解决了无效的锁申请浪费资源的问题：
+基于信息量，当锁被其它资源占用时，当前线程通过 Redis 的 channel 订阅锁的释放事件，一旦锁释放会发消息通知待等待的线程进行竞争
+当 this.await返回false，说明等待时间已经超出获取锁最大等待时间，取消订阅并返回获取锁失败
+当 this.await返回true，进入循环尝试获取锁
+current = System.currentTimeMillis();
+// 订阅分布式锁，解锁时进行通知
+final RFuture<RedissonLockEntry> subscribeFuture = subscribe(threadId);
+```
+
+``` java
+  public RFuture<E> subscribe(String entryName, String channelName) {
+        // 从PublishSubscribeService获取对应的信号量。 相同的channelName获取的是同一个信号量
+        // public AsyncSemaphore getSemaphore(ChannelName channelName) {
+        //    return locks[Math.abs(channelName.hashCode() % locks.length)];
+        // }
+
+        AtomicReference<Runnable> listenerHolder = new AtomicReference<Runnable>();
+        AsyncSemaphore semaphore = service.getSemaphore(new ChannelName(channelName));
+        RPromise<E> newPromise = new RedissonPromise<E>() {
+            @Override
+            public boolean cancel(boolean mayInterruptIfRunning) {
+                return semaphore.remove(listenerHolder.get());
+            }
+        };
+
+        Runnable listener = new Runnable() {
+
+            @Override
+            public void run() {
+                //  如果存在RedissonLockEntry， 则直接利用已有的监听
+                E entry = entries.get(entryName);
+                if (entry != null) {
+                    entry.acquire();
+                    semaphore.release();
+                    entry.getPromise().onComplete(new TransferListener<E>(newPromise));
+                    return;
+                }
+                
+                E value = createEntry(newPromise);
+                value.acquire();
+                
+                E oldValue = entries.putIfAbsent(entryName, value);
+                if (oldValue != null) {
+                    oldValue.acquire();
+                    semaphore.release();
+                    oldValue.getPromise().onComplete(new TransferListener<E>(newPromise));
+                    return;
+                }
+                // 创建监听，
+                RedisPubSubListener<Object> listener = createListener(channelName, value);
+                // 订阅监听
+                service.subscribe(LongCodec.INSTANCE, channelName, semaphore, listener);
+            }
+        };
+        // 最终会执行listener.run
+        semaphore.acquire(listener);
+        listenerHolder.set(listener);
+        
+        return newPromise;
+    }
+
+```
+
+``` java
+public void acquire(Runnable listener) {
+    acquire(listener, 1);
+}
+
+public void acquire(Runnable listener, int permits) {
+    boolean run = false;
+
+    synchronized (this) {
+        // counter初始化值为1
+        if (counter < permits) {
+            // 如果不是第一次执行，则将listener加入到listeners集合中
+            listeners.add(new Entry(listener, permits));
+            return;
+        } else {
+            counter -= permits;
+            run = true;
+        }
+    }
+
+    // 第一次执行acquire， 才会执行listener.run()方法
+    if (run) {
+        listener.run();
+    }
+}
+```
+
+> 1、从PublishSubscribeService获取对应的信号量， 相同的channelName获取的是同一个信号量  
+> 2、如果是第一次请求，则会立马执行listener.run()方法， 否则需要等上个线程获取到该信号量执行完方能执行； 
+> 3、如果已经存在RedissonLockEntry， 则利用已经订阅就行  
+> 4、如果不存在RedissonLockEntry， 则会创建新的RedissonLockEntry，然后执行  
+> **线程会在自旋开始前进行订阅redis channel。在自旋过程中通过 subscribeFuture.getNow().getLatch().tryAcquire()调用信号量的方法来阻塞住相同锁的线程。当某一个线程释放锁之后，会广播解锁消息。监听器接收到解锁消息的时候
+释放信号量。最终会唤起线程。这样就避免了在while循环中不停的向redis发起请求。**
 
 
-### 自旋
+## unlock()
+``` java
+public class RedissonLock extends RedissonExpirable implements RLock {
+    @Override
+    public void unlock() {
+        try {
+            get(unlockAsync(Thread.currentThread().getId()));
+        } catch (RedisException e) {
+            if (e.getCause() instanceof IllegalMonitorStateException) {
+                throw (IllegalMonitorStateException) e.getCause();
+            } else {
+                throw e;
+            }
+        }
+    }
 
+    @Override
+    public RFuture<Void> unlockAsync(long threadId) {
+        RPromise<Void> result = new RedissonPromise<Void>();
+        
+        // 返回的RFuture如果持有的结果为true，说明解锁成功，返回NULL说明线程ID异常，加锁和解锁的客户端线程不是同一个线程
+        RFuture<Boolean> future = unlockInnerAsync(threadId);
+        
+        
+        future.onComplete((opStatus, e) -> {
+            // 取消看门狗的续期任务
+            cancelExpirationRenewal(threadId);
+
+            if (e != null) {
+                result.tryFailure(e);
+                return;
+            }
+
+            if (opStatus == null) {
+                IllegalMonitorStateException cause = new IllegalMonitorStateException("attempt to unlock lock, not locked by current thread by node id: "
+                        + id + " thread-id: " + threadId);
+                result.tryFailure(cause);
+                return;
+            }
+
+            result.trySuccess(null);
+        });
+
+        return result;
+    }
+
+
+    protected RFuture<Boolean> unlockInnerAsync(long threadId) {
+        return evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
+                "if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then " +
+                        "return nil;" +
+                        "end; " +
+                        "local counter = redis.call('hincrby', KEYS[1], ARGV[3], -1); " +
+                        "if (counter > 0) then " +
+                        "redis.call('pexpire', KEYS[1], ARGV[2]); " +
+                        "return 0; " +
+                        "else " +
+                        "redis.call('del', KEYS[1]); " +
+                        "redis.call('publish', KEYS[2], ARGV[1]); " +
+                        "return 1; " +
+                        "end; " +
+                        "return nil;",
+                Arrays.asList(getName(), getChannelName()), LockPubSub.UNLOCK_MESSAGE, internalLockLeaseTime, getLockName(threadId));
+    }
+}
+```
+### 解锁 lua
+``` lua
+1、如果分布式锁存在，但是value不匹配，表示锁已经被其他线程占用，无权释放锁，
+if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then 
+    return nil;
+end; 
+2、因为锁可重入，所以释放锁时不能把所有已获取的锁全都释放掉，一次只能释放一把锁，因此执行 hincrby 对锁的值减一
+local counter = redis.call('hincrby', KEYS[1], ARGV[3], -1);
+if (counter > 0) then
+    2.1 释放一把锁后，如果还有剩余的锁，则刷新锁的失效时间并返回 0
+    redis.call('pexpire', KEYS[1], ARGV[2]); 
+    return 0;
+else
+    2.2 如果刚才释放的已经是最后一把锁，则执行del命令删除锁的key,并发布锁释放消息,返回 1
+    redis.call('del', KEYS[1]); 
+    2.3 这里的发布消息就是配合上面的信号量,释放信号量,最终会唤起线程。
+    redis.call('publish', KEYS[2], ARGV[1]);
+    return 1;
+end;
+return nil;
+```
+
+### IllegalMonitorStateException
+> 非锁的持有者释放锁时抛出异常，这个问题本质上还是锁执行时间和过期时间的问题
+> 1、线程A调用tryLock()方法，传入leaseTime参数。这个时候是不会启动看门狗线程的自动续期
+> 2、因为A某种原因超时了，redis中锁过期了
+> 3、线程B正常获取到了锁,开始执行业务代码
+> 4、线程A再去释放锁,就会抛出 IllegalMonitorStateException
+
+### 示例
+```java
+
+    @Test
+    void testTryLockArgsBySimpleThread2() throws InterruptedException {
+
+        // A线程，释放锁，不开启看门狗
+        new Thread(() -> {
+            RLock lock = redisson.getLock("DEMO_LOCK");
+            try {
+                boolean b = lock.tryLock(10, 5, TimeUnit.SECONDS);
+                if (b) {
+                    log.info("A 获取到了锁");
+                }
+                Thread.sleep(20 * 1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                log.info("A 释放了锁");
+                lock.unlock();
+            }
+        }).start();
+        Thread.sleep(5 * 1000);
+
+        // A线程，不释放锁，开启看门狗
+        new Thread(() -> {
+            RLock lock = redisson.getLock("DEMO_LOCK");
+            try {
+                boolean b = lock.tryLock(6, TimeUnit.SECONDS);
+                if (b) {
+                    log.info("B 获取到了锁");
+                }
+                Thread.sleep(2 * 1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                log.info("B 不释放锁");
+            }
+        }).start();
+        Thread.sleep(3000 * 10);
+    }
+```
+```java
+Exception in thread "Thread-3" java.lang.IllegalMonitorStateException: attempt to unlock lock, not locked by current thread by node id: c12bbc26-b49c-4f73-b130-f59df5fdd80a thread-id: 61
+```
+解决方法
+``` java
+finally
+{
+    if (rLock.isLocked()){
+        rLock.unlock();
+    }
+}
+```
+
+
+
+## 存在的问题:  
+### 单实例或slave-master
+> 无论是通过set nx px 的方式使用分布式锁,还是 RedissonLock,都会存在下面两个问题  
+> **1、单实例情况下redis挂掉,那所有的客户端都获取不到锁了**  
+> **2、假设当前redis是多台机器做master-slave(一主多从和哨兵模式)。当在一个client在master上获取到锁,master挂掉之后,slave选举成功master, 由于加锁的key未完成同步,其他client 也会有机会加锁成功，执行业务代码,因此此时会有>=2个client执行了业务代码,不满足分布式锁的原则**   
+
+### 锁过期时间和任务时间执行时间
+> 由于使用set nx px 的形式,超时时间在具体使用的时候就会进行指定，且仅仅指定一次。如果业务的执行时间大于指定的超时时间就会出现业务代码未执行完成,redis中的key已经释放(锁释放).其他client也有机会进行加锁成功执行。  
+> **在 RedissonLock 中通过另起一个线程进行续约的操作(看门狗) 后台起一个定时任务的线程，每隔一定时间对该锁进行续命，延长锁的时间来避免这个问题**  
+> **当tryLock传入租约时间的时候不会启动看门狗线程**
+    

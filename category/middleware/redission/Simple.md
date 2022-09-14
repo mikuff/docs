@@ -108,8 +108,3 @@ public class RedisDistributedLock {
     }
 }
 ```
-
-> 理解:  
-    1、通过set nx px 这种方式生成的锁首先会具有单实例的问题(同RedissonLock)。假设当前redis是多台机器做master-slave。当在一个client在master上获取到锁,master挂掉之后,slave选举成功master, 由于加锁的key未完成同步,其他client 也会有机会加锁成功，执行业务代码,因此此时会有>=2个client执行了业务代码,不满足分布式锁的原则   
-    2、由于使用set nx px 的形式,超时时间在具体使用的时候就会进行指定，且仅仅指定一次。如果业务的执行时间大于指定的超时时间就会出现业务代码未执行完成,redis中的key已经释放(锁释放).其他client也有机会进行加锁成功执行。在 RedissonLock 中通过另起一个线程进行续约的操作(**看门狗**) 后台起一个定时任务的线程，每隔一定时间对该锁进行续命，延长锁的时间来避免这个问题
-    
