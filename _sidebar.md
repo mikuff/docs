@@ -4,6 +4,7 @@
 	* [设计模式](/)
 		* [基础总结](category/code_organization/design_pattern/基础总结.md)
 		* [策略模式](category/code_organization/design_pattern/策略模式.md)
+		* [状态模式](category/code_organization/design_pattern/状态模式.md)
 * [数据结构](/)
 	* [数组](category/data_structure/01_数组.md)
 	* [栈 队列 循环队列](category/data_structure/02_栈队列循环队列.md)
