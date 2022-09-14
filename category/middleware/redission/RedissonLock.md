@@ -562,7 +562,7 @@ return nil;
         }).start();
         Thread.sleep(5 * 1000);
 
-        // A线程，不释放锁，开启看门狗
+        // B线程，不释放锁，开启看门狗
         new Thread(() -> {
             RLock lock = redisson.getLock("DEMO_LOCK");
             try {
