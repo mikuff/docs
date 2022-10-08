@@ -70,6 +70,8 @@
 	* [rabbitMQ](/)
 		* [rabbitMQ 核心概念](category/middleware/rabbitmq/01_rabbitMQ核心概念.md)
 		* [rabbitMQ 高级特性](category/middleware/rabbitmq/02_rabbitMQ高级特性.md)
+		* [整合Spring](category/middleware/rabbitmq/03_rabbit_spring.md)
+		* [整合SpringBoot](category/middleware/rabbitmq/04_rabbit_springboot.md)
 	* [redission](/)
 		* [单实例分布式锁](category/middleware/redission/Simple.md)
 		* [RedissonLock](category/middleware/redission/RedissonLock.md)
@@ -82,4 +84,3 @@
 * [优化和排错](/)
 	* [arthas](category/utils/arthas.md)
 	* [oom](category/utils/oom.md)
-	
