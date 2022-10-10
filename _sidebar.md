@@ -73,6 +73,7 @@
 		* [rabbitMQ 高级特性](category/middleware/rabbitmq/02_rabbitMQ高级特性.md)
 		* [整合Spring](category/middleware/rabbitmq/03_rabbit_spring.md)
 		* [整合SpringBoot](category/middleware/rabbitmq/04_rabbit_springboot.md)
+		* [集群架构](category/middleware/rabbitmq/05_rabbit集群机构.md)
 	* [redission](/)
 		* [单实例分布式锁](category/middleware/redission/Simple.md)
 		* [RedissonLock](category/middleware/redission/RedissonLock.md)
