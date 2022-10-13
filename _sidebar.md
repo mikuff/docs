@@ -87,6 +87,9 @@
 		* [源码编译](category/framework/spring/01_源码编译.md)
 		* [IOC的基本概念](category/framework/spring/02_ioc的基本概念.md)
 		* [Ioc Service Provier](category/framework/spring/03_Ioc_service_provider.md)
+		* [BeanFactory](category/framework/spring/04_BeanFactory.md)
+	* [Spring ioc源码](/)
+		* [BeanFacotry顶层架构](/category/framework/spring_source/ioc/01_BeanFacotry顶层架构.md)
 
 * [优化和排错](/)
 	* [arthas](category/utils/arthas.md)
