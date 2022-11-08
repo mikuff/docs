@@ -1,4 +1,24 @@
 
-BeanFactory仅仅是定义了
+> 这张图是ioc容器的顶层代码设计。从类图中可以看出，最顶层的三个接口BeanFactory,SingletonBeanFactory,AliasRegistry定义了spring容器所具有的功能  
+- BeanFactory用于访问SpringBean容器的顶级接口，定义了获取Bean的方法;
+- SingletonBeanFactory定义了操作单实例对象池的方法(存储,获取)，注意是单实例对象，非单例对象
+- AliasRegistry定义了管理别名的接口
+- SimpleAliasRegistry 是AliasRegistry的默认实现，使用ConcurrentHashMap来管理别名和bean标准名称的存储关系
+- DefaultSingletonBeanRegistry继承了SimpleAliasRegistry并实现SingletonBeanRegistry，使得它既有管理SingletonBean的功能，又提供了别名的功能，它是一个通用的存储共享bean实例的地方
+- FactoryBeanRegistrySupport继承DefaultSingletonBeanRegistry,主要是用来扩展对SingletonBean的管理，即加入一层ConcurrentHashMap的SingletonBean的缓存。获取对象时先检查单例缓存存不存在，如果不存在，在创建使用抽象原型模式创建
+- AbstractBeanFactory是BeanFactory的抽象实现，最主要的是真正实现向IOC容器获取Bean的功能，也是触发依赖注入(DI)功能的地方。同时也是进行依赖关系处理。
+    - ConfigurableBeanFacotry是对BeanFactory的扩展,Beanfacotry是容器的顶层接口。而ConfigurableBeanFacotr 通过继承HierarchicalBeanFactory拥有分层的能力(BeanFactory父子层级),SingletonBeanRegistry单例类注册的能力。其主要定义接口方法: 类加载器,类型转化,属性编辑器,BeanPostProcessor,作用域,bean定义,处理bean依赖关系,合并其他ConfigurableBeanFactory,bean如何销毁等方法
+- AbstractAutowireCapableBeanFactory主要作用在抽象工厂的基础上扩展于自动装配注入,实现AutowireCapableBeanFactory
+- DefaultListableBeanFactory 是一个完整的、并且可以用于生产的IoC容器。主要是提供全部类管理的功能
+
+> spring ioc代码设计的很复杂。从代码的整体设计可以学习到
+- 向上抽象，BeanFactory、SingletonBeanFactory、AliasRegistry 就是抽象出的顶级接口
+- 分层设计，在接口行为上分则,这样可以对应到实现类的一层的仅关注层负责的职能。如 SimpleAliasRegistry 就只负责管理别名和bean标准名称的存储关系
+- 在分层设计的基础上通过继承完成功能的组合，AbstractAutowireCapableBeanFactory通过实现ConfigurableBeanFacotry明确自己的职能。继承FactoryBeanRegistrySupport则不需要关心对SingletonBean的管理。
+- 面向接口编程，不直接持有类，尽量持有接口和抽象类
+- 隐含原型+工厂的设计模式
+
 
 ![](./img/顶层架构.png)
+
+IoC容器只管理一个singleton bean的一个共享实例,所有对id或id匹配该bean定义的bean的请求都会导致Spring容器返回一个特定的bean实例.换句话说,当定义一个singleton bean,Spring IoC容器将会创建一个由该bean\定义的对象实例.该单个实例存储在缓存中,对该bean所有以后请求和引用都将返回这个缓存中的对象实例.可以更好的重用对象,节省了重复创建对象的开销.
