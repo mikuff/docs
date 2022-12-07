@@ -1,0 +1,2 @@
+spring本身并不支持JTA的强一致性事务,spring的核心是Bese Efforts 1PC,如果spring需要实现JTA的事务，需要引入atomics的第三方实现
+
