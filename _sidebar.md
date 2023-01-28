@@ -97,7 +97,10 @@
 		* [BeanFactory](category/framework/spring/04_BeanFactory.md)
 	* [Spring ioc源码](/)
 		* [BeanFacotry顶层架构](/category/framework/spring_source/ioc/01_BeanFacotry顶层架构.md)
-
+	* [Spring相关](/)
+		* [自定义启动排序注解](category/framework/spring相关/01_自定义启动排序注解.md)
+		* [自定义stater和原理一](category/framework/spring相关/02_自定义stater和原理一.md)
+		* [自定义stater和原理二](category/framework/spring相关/03_自定义stater和原理二.md)
 * [优化和排错](/)
 	* [arthas](category/utils/arthas.md)
 	* [oom](category/utils/oom.md)
