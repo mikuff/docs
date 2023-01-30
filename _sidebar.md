@@ -102,6 +102,8 @@
 		* [自定义stater和原理一](category/framework/spring相关/02_自定义stater和原理一.md)
 		* [自定义stater和原理二](category/framework/spring相关/03_自定义stater和原理二.md)
 		* [自定义stater和原理三](category/framework/spring相关/04_自定义stater和原理三.md)
+		* [策略模式落地](category/framework/spring相关/05_策略模式落地.md)
+		
 * [优化和排错](/)
 	* [arthas](category/utils/arthas.md)
 	* [oom](category/utils/oom.md)
