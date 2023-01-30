@@ -2,7 +2,7 @@
 
 不使用spring spi的情况下，可以使用一种取巧的方法，即以jar包的方式进行集成依赖包的类到spring容器中，比如boson-sdk的实现方式
 
-1、以正常的方式编写代码，抛弃启动类，并打成jar包
+1、以正常的方式编写代码，抛弃启动类，并打成jar包  
 2、利用springboot启动时的主类所在的包名在classpath中进行扫描。将jar包中的类正常加载到spring容器中
 
 ![](./img/boson-sdk-test.png)
