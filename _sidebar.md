@@ -83,6 +83,9 @@
 		* [XA和2PC](category/middleware/tx/02_XA和2pc.md)
 		* [消息驱动](category/middleware/tx/03_消息驱动.md)
 		* [事件溯源](category/middleware/tx/04_事件溯源.md)
+  	* [部署]
+  		* [redis_cluster](category/deployment/redis-cluster.md)
+  		* [mysql_pxc](category/deployment/mysql_pxc.md)
 		
 * [框架](/)
 	* [nacos](/)
